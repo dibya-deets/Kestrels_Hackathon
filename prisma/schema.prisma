@@ -19,10 +19,15 @@ model User {
 
   accounts       Account[]
   sessions       Session[]
+
+  chatConversations ChatConversation[]
+  chatAnalytics     ChatAnalytics[]
+
   createdAt      DateTime @default(now())         
   lastLogin      DateTime @updatedAt            
   xp             Int      @default(0)           
   level          String   @default("Seedling")
+   progress  Json     @default("{}")
 }
 
 model Account {
@@ -59,4 +64,65 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+
+model FAQ {
+  id          String   @id @default(cuid())
+  question    String
+  answer      String
+  keywords    String[] // Array of keywords for matching
+  category    String?  // Optional: group FAQs by category
+  priority    Int      @default(0) // Higher priority = better match
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([category])
+}
+
+model ChatConversation {
+  id        String        @id @default(cuid())
+  sessionId String        // Browser session ID
+  userId    String?       // Optional: link to authenticated user
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  
+  user User? @relation(fields: [userId], references: [id])
+  
+  @@index([sessionId])
+  @@index([userId])
+}
+model LessonProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  courseId   String
+  stage      Int
+  completed  Boolean  @default(false)
+  completedAt DateTime? @default(now())
+}
+
+model ChatMessage {
+  id             String           @id @default(cuid())
+  content        String
+  isBot          Boolean          @default(false)
+  conversationId String
+  conversation   ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+}
+
+model ChatAnalytics {
+  id             String   @id @default(cuid())
+  question       String
+  wasAnswered    Boolean
+  selectedFaqId  String?
+  sessionId      String
+  userId         String?  // Optional: track authenticated users
+  createdAt      DateTime @default(now())
+  
+  user User? @relation(fields: [userId], references: [id])
+  
+  @@index([wasAnswered])
+  @@index([createdAt])
+  @@index([userId])
 }

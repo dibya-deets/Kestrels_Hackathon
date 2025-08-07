@@ -21,48 +21,52 @@ export default function SignInPage() {
     if (res?.error) {
       setError("Invalid credentials");
     }
-    //  else if (res.ok) {
-    //   router.push("/dashboard");
-    // } 
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-white to-indigo-400 flex items-center justify-center p-4">
-      <div className="bg-white shadow-xl rounded-xl p-8 w-full max-w-md">
+  <div className="section section-hero codedex-style flex items-center justify-center">
+  <div className="z-10 bg-[#fdf2b9] border-2 border-black pixel-card-shadow p-8 w-full max-w-md font-sans">
+  
         <div className="flex flex-col items-center mb-6">
           <Image src="/assets/mascot.png" width={60} height={60} alt="Mascot" />
-          <h1 className="text-2xl font-bold text-indigo-600 mt-2">InvesTerra</h1>
-          <p className="text-sm text-gray-500">Welcome back to your finance playground</p>
+          <h1 className="text-xl font-pixel text-[#e0c000] mt-4">InvesTerra</h1>
+          <p className="text-xs text-gray-600 font-sans text-center mt-1">
+            Welcome back to your finance playground
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            required
-            onChange={(e) => setEmail(e.target.value)}
-            className="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            required
-            onChange={(e) => setPassword(e.target.value)}
-            className="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-          <button type="submit" className="p-3  bg-indigo-600 hover: bg-indigo-600 text-white rounded transition">
-            Sign In
-          </button>
+       <form onSubmit={handleSubmit} className="flex flex-col gap-4 font-sans">
+  <input
+    type="email"
+    placeholder="Email"
+    value={email}
+    required
+    onChange={(e) => setEmail(e.target.value)}
+    className="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#6f5cff] 
+               bg-white text-black placeholder-gray-500"
+  />
+  <input
+    type="password"
+    placeholder="Password"
+    value={password}
+    required
+    onChange={(e) => setPassword(e.target.value)}
+    className="p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#6f5cff] 
+               bg-white text-black placeholder-gray-500"
+  />
+  <button type="submit" className="btn-start w-full">
+    Sign In
+  </button>
+
         </form>
 
-        {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
+        {error && <p className="text-red-500 mt-4 text-center font-sans">{error}</p>}
 
-        <p className="text-sm text-center mt-6">
-          Don’t have an account? <a href="/signup" className=" text-indigo-600 hover:underline">Sign up</a>
+        <p className="text-xs text-gray-600 text-center mt-6 font-sans">
+          Don’t have an account?{" "}
+          <a href="/signup" className="text-xs text-[#e0c000] hover:underline">Sign up</a>
         </p>
       </div>
-    </main>
+    </div>
   );
 }

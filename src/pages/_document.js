@@ -3,8 +3,20 @@ import { Html, Head, Main, NextScript } from "next/document";
 export default function Document() {
   return (
     <Html lang="en">
-      <Head />
-      <body className="antialiased">
+      <Head>
+        {/* Google Font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+          rel="stylesheet"
+        />
+
+        {/* Lottie */}
+        <script
+          src="https://unpkg.com/lottie-web@5.7.4/build/player/lottie.min.js"
+          defer
+        ></script>
+      </Head>
+      <body>
         <Main />
         <NextScript />
       </body>
