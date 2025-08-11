@@ -10,9 +10,27 @@ const comfortaa = Comfortaa({
   weight: ["400"],
 });
 
+// Map display names
+const COURSE_TITLES = {
+  crypto: "Cryptocurrency",
+  investing: "Investing",
+};
+
+// Map background images
+const HERO_BG = {
+  crypto: "/assets/crypto1.gif",
+  investing: "/assets/investing1.gif",
+  // stocks: "/assets/stocks.gif",
+};
+
+// Per-course background position (shift right to show the rock)
+const HERO_BG_POS = {
+  crypto: "center center",
+  investing: "40% bottom", // tweak 75–85% if needed; or try "right 45%"
+};
+
 export default function CourseOverview({ user, courseId }) {
   const courseLessons = lessonContent[courseId] ?? {};
-
   const completedLessons = user.progress?.[courseId]?.lessonsCompleted ?? [];
 
   const isUnlocked = (index) => {
@@ -20,24 +38,31 @@ export default function CourseOverview({ user, courseId }) {
     return completedLessons.includes(Object.keys(courseLessons)[index - 1]);
   };
 
+  // Title + hero background (minimal edits)
+  const title = COURSE_TITLES[courseId] ?? (courseId?.[0]?.toUpperCase() + courseId?.slice(1));
+  const heroBg = HERO_BG[courseId] ?? HERO_BG.crypto;
+  const heroPos = HERO_BG_POS[courseId] ?? "center center";
+
   return (
     <div className="min-h-screen bg-[#1A1B2D] text-white">
-      <Header />
+      <Header userProgress={user.progress} />
 
       {/* Hero Section */}
       <div
-        className="w-full bg-cover bg-center px-6 py-20 flex flex-col justify-center"
+        className="w-full bg-cover bg-bottom px-6 py-20 flex flex-col justify"
         style={{
-          backgroundImage: "url('/assets/crypto1.png')", // Update path if needed
+          backgroundImage: `url('${heroBg}')`,
+          backgroundPosition: heroPos,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
         }}
       >
         <h1 className="text-3xl md:text-4xl text-white font-bold font-['Press_Start_2P']">
-          {courseId === "crypto" ? "Cryptocurrency" : courseId} Course
+          {title} Course
         </h1>
-        
+
         <p className={`text-base text-white mt-4 max-w-2xl ${comfortaa.className}`}>
-          
-          Dive deep into financial education with interactive lessons, XP,
+          Dive deep into financial education with interactive lessons, XP progress,
           badges, and quizzes!
         </p>
       </div>
@@ -75,9 +100,7 @@ export default function CourseOverview({ user, courseId }) {
                         {completed ? "Review" : "Start"}
                       </Link>
                     ) : (
-                      <span className="text-gray-400 font-semibold">
-                        🔒 Locked
-                      </span>
+                      <span className="text-gray-400 font-semibold">🔒 Locked</span>
                     )}
                   </div>
                 </div>
