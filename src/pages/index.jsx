@@ -3,7 +3,6 @@ import dynamic from "next/dynamic";
 import { Comfortaa } from 'next/font/google';
 import Link from "next/link";
 
-
 // Dynamically load LottiePlayer
 const LottiePlayer = dynamic(() => import("@/components/LottiePlayer"), { ssr: false });
 
@@ -38,7 +37,12 @@ export default function Home() {
           <p className="hero-tagline" style={{ fontFamily: 'Comfortaa, cursive' }}>
             The most fun and beginner-friendly way to learn about finance
           </p>
-          <a href="/signup" className="btn-start">Get Started</a>
+
+          {/* CTAs */}
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
+            <a href="/signup" className="btn-start">Get Started</a>
+            <a href="/sign_in" className="btn-start">Sign in</a>
+          </div>
         </div>
       </section>
 
@@ -139,7 +143,10 @@ export default function Home() {
             Ready to master financial literacy in a fun, gamified world? Join{" "}
             <strong>InvesTerra</strong> and start your adventure now!
           </p>
-          <a className="btn-start" href="/signup">Start Learning For Free</a>
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+            <a className="btn-start" href="/signup">Start Learning For Free</a>
+            <a className="btn-start" href="/sign_in">Sign in</a>
+          </div>
         </div>
       </section>
 

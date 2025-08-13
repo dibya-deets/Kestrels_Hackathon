@@ -1,68 +1,119 @@
-import { getServerSession } from "next-auth";
+// src/pages/api/user/progress.js
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import prisma from "@/lib/prisma";
 
+/** ---- Level system (names you approved) ---- */
+const LEVELS = [
+  { minXP: 0,    name: "Newbie Trader" },
+  { minXP: 200,  name: "Crypto Explorer" },
+  { minXP: 500,  name: "Market Strategist" },
+  { minXP: 1000, name: "Wealth Builder" },
+  { minXP: 2000, name: "Finance Guru" },
+];
+function levelFromXP(xp) {
+  let name = LEVELS[0].name;
+  for (let i = 0; i < LEVELS.length; i++) {
+    if (xp >= LEVELS[i].minXP) name = LEVELS[i].name;
+    else break;
+  }
+  return name;
+}
+
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!session?.user?.email) return res.status(401).json({ error: "Unauthorized" });
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
+    select: { id: true, xp: true, level: true, progress: true, email: true, name: true },
   });
+  if (!user) return res.status(404).json({ error: "User not found" });
 
-  if (!user) {
-    return res.status(404).json({ error: "User not found" });
-  }
-
+  // ----- GET: return xp/level and (optionally) course progress -----
   if (req.method === "GET") {
-    // Return progress as number of completed lessons for locking logic
-    const courseId = req.query.courseId; // optional filter
-    let progressData = user.progress || {};
+    const { courseId } = req.query || {};
+    const progress = user.progress || {};
 
-    if (courseId && progressData[courseId]) {
+    if (courseId) {
+      const course = progress[courseId] || { lessonsCompleted: [] };
       return res.json({
-        xp: user.xp,
-        lessonsCompleted: progressData[courseId].lessonsCompleted || [],
-        progressCount: progressData[courseId].lessonsCompleted.length,
+        name: user.name,
+        email: user.email,
+        xp: user.xp || 0,
+        level: user.level || levelFromXP(user.xp || 0),
+        lessonsCompleted: course.lessonsCompleted || [],
+        progressCount: (course.lessonsCompleted || []).length,
       });
     }
 
     return res.json({
-      xp: user.xp,
-      progress: progressData,
+      name: user.name,
+      email: user.email,
+      xp: user.xp || 0,
+      level: user.level || levelFromXP(user.xp || 0),
+      progress,
     });
   }
 
+  // ----- POST: update xp/level + mark lesson complete -----
   if (req.method === "POST") {
-    const { course, lessonId, xpGained = 20 } = req.body;
+    /**
+     * Supports two shapes:
+     * 1) Increment mode:
+     *    { courseId, lessonId, xpGained?: number }
+     * 2) Explicit set mode (from your new lesson page):
+     *    { courseId, lessonId, xp: number, level?: string }
+     */
+    const {
+      courseId,
+      lessonId,
+      xpGained,   // optional (increment mode)
+      xp,         // optional (explicit set)
+      level,      // optional (explicit set)
+    } = req.body || {};
 
-    let current = user.progress || {};
-    if (!current[course]) {
-      current[course] = { lessonsCompleted: [], quizCompleted: false };
+    if (!courseId || !lessonId) {
+      return res.status(400).json({ error: "courseId and lessonId are required" });
     }
 
-    const alreadyDone = current[course].lessonsCompleted.includes(lessonId);
+    // Prepare/merge progress JSON
+    const progress = (user.progress && typeof user.progress === "object") ? { ...user.progress } : {};
+    if (!progress[courseId]) progress[courseId] = { lessonsCompleted: [] };
 
-    if (!alreadyDone) {
-      current[course].lessonsCompleted.push(lessonId);
+    const alreadyCompleted = progress[courseId].lessonsCompleted.includes(lessonId);
+    if (!alreadyCompleted) {
+      progress[courseId].lessonsCompleted.push(lessonId);
     }
+
+    // Decide new XP
+    let newXP;
+    if (Number.isFinite(xp)) {
+      // Explicit override (from your client page)
+      newXP = Math.max(0, Math.floor(xp));
+    } else {
+      // Increment mode (default +50 only if this lesson wasn’t already completed)
+      const gain = Number.isFinite(xpGained) ? xpGained : 50;
+      newXP = (user.xp || 0) + (alreadyCompleted ? 0 : gain);
+    }
+
+    // Decide new Level (string)
+    const newLevel = level || levelFromXP(newXP);
 
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
-        progress: current,
-        xp: alreadyDone ? user.xp : user.xp + xpGained,
+        xp: newXP,
+        level: newLevel,
+        progress,
+        // lastLogin is @updatedAt in your schema, so it'll bump automatically on update
       },
+      select: { name: true, email: true, xp: true, level: true, progress: true },
     });
 
-    return res.json({
-      xp: updated.xp,
-      progress: updated.progress,
-    });
+    return res.json(updated);
   }
 
   res.setHeader("Allow", ["GET", "POST"]);
-  res.status(405).end(`Method ${req.method} Not Allowed`);
+  return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
 }

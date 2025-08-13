@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
+import Cloud from "@/components/cloud";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -28,7 +29,12 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="section section-hero codedex-style flex items-center justify-center">
+     <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
+          {/* Animated background */}
+          <Cloud />
+              {/* Optional dark tint */}
+      <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+<div className="flex items-center justify-center min-h-screen relative z-10">
       <div className="z-10 bg-[#fdf2b9] border-2 border-black pixel-card-shadow p-8 w-full max-w-md font-sans">
         <div className="flex flex-col items-center mb-6">
           <Image src="/assets/mascot.png" width={60} height={60} alt="Mascot" />
@@ -90,5 +96,6 @@ export default function SignUpPage() {
         </p>
       </div>
     </div>
+      </div>
   );
 }

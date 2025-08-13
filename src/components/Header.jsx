@@ -1,83 +1,93 @@
 // components/Header.jsx
-
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { Press_Start_2P } from "next/font/google";
 import { signOut } from "next-auth/react";
 
-const pressStart2P = Press_Start_2P({
-  subsets: ["latin"],
-  weight: ["400"],
-});
+const pressStart2P = Press_Start_2P({ subsets: ["latin"], weight: ["400"] });
 
-export default function Header({ showBackButton, userProgress }) {
+export default function Header() {
   const router = useRouter();
-  const isLessonPage =
-    router.pathname.includes("/dashboard/") &&
-    router.pathname.split("/").length === 4;
 
-  const handleLogout = async () => {
-    try {
-      // Save progress before logging out
-      await fetch("/api/saveProgress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progress: userProgress }),
-      });
+  // Route-aware buttons
+  const p = router.pathname; // "/", "/dashboard", "/dashboard/[courseId]", "/dashboard/[courseId]/[lessonId]", "/dashboard/[courseId]/quiz"
+  const isLanding = p === "/";
+  const isCoursePage = p === "/dashboard/[courseId]";
+  const isLessonPage = p === "/dashboard/[courseId]/[lessonId]";
+  const isQuizPage = p === "/dashboard/[courseId]/quiz";
 
-      // Sign out and redirect to landing page
-      await signOut({ callbackUrl: "/" });
-    } catch (error) {
-      console.error("Error saving progress before logout:", error);
-      // Even if save fails, still sign out
-      await signOut({ callbackUrl: "/" });
-    }
-  };
+  // Pull ids from the URL for quiz back link
+  const courseId = Array.isArray(router.query.courseId)
+    ? router.query.courseId[0]
+    : router.query.courseId;
+  const lessonId = Array.isArray(router.query.lessonId)
+    ? router.query.lessonId[0]
+    : router.query.lessonId;
+
+  // Fallback: if lessonId missing, send back to course page instead of lesson page
+  const backToLessonHref =
+    courseId ? `/dashboard/${courseId}/${lessonId || ""}`.replace(/\/$/, "") : "/dashboard";
+
+  // CTA style: like the logo (no background, yellow text)
+  const cta =
+    `text-yellow-400 hover:text-yellow-300 px-1 transition-colors ` +
+    `${pressStart2P.className}`;
 
   return (
-    <header className="bg-[#0D0E1D] text-white px-4 sm:px-6 py-4 flex justify-between items-center">
-      <div className="flex items-center space-x-4">
-        {showBackButton && isLessonPage && (
+    <header className="bg-[#0D0E1D] text-white px-4 sm:px-6 py-4 flex items-center justify-between relative">
+      {/* Left: Back only on lesson page */}
+      <div className="flex items-center min-w-[80px]">
+        {isLessonPage && (
           <button
-            onClick={() =>
-              router.push(`/dashboard/${router.query.courseId}`)
-            }
-            className="bg-gray-700 text-white px-3 py-1 rounded hover:bg-gray-600 text-sm sm:text-base"
+            onClick={() => router.push(`/dashboard/${router.query.courseId}`)}
+            className={cta}
+            aria-label="Back to Course"
           >
-            ← Back to Course
+            Back
           </button>
         )}
-        <Link href="/" legacyBehavior>
-          <a
-            className={`text-yellow-400 text-lg sm:text-xl ${pressStart2P.className}`}
-          >
-            InvesTerra
-          </a>
-        </Link>
       </div>
 
-      <div className="flex space-x-6 items-center">
-        <Link href="/" legacyBehavior>
-          <a
-            className={`text-yellow-400 text-sm sm:text-base hover:text-yellow-300 ${pressStart2P.className}`}
-          >
-            Home
-          </a>
-        </Link>
-        <Link href="/dashboard" legacyBehavior>
-          <a
-            className={`text-yellow-400 text-sm sm:text-base hover:text-yellow-300 ${pressStart2P.className}`}
-          >
-            Dashboard
-          </a>
-        </Link>
-        <button
-          onClick={handleLogout}
-          className={`text-yellow-400 text-sm sm:text-base hover:text-yellow-300 ${pressStart2P.className}`}
-        >
-          Logout
-        </button>
+      {/* Center: InvesTerra + mascot as a pure logo (not clickable) */}
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 flex items-center text-yellow-400 text-lg sm:text-xl ${pressStart2P.className}`}
+      >
+        <img
+          src="/assets/mascot.png"
+          alt=""
+          aria-hidden="true"
+          className="w-6 h-6 mr-2"
+        />
+        InvesTerra
       </div>
+
+      {/* Right: Home (or Back to Lesson on quiz), Dashboard (course/lesson), Logout (all except landing) */}
+      <nav className="flex items-center gap-4 min-w-[80px] justify-end">
+        {isQuizPage ? (
+          <Link href={backToLessonHref} className={cta}>
+            Back
+          </Link>
+        ) : (
+          <Link href="/" className={cta}>
+            Home
+          </Link>
+        )}
+
+        {(isCoursePage || isLessonPage) && (
+          <Link href="/dashboard" className={cta}>
+            Dashboard
+          </Link>
+        )}
+
+        {!isLanding && (
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className={cta}
+          >
+            Logout
+          </button>
+        )}
+      </nav>
     </header>
   );
 }

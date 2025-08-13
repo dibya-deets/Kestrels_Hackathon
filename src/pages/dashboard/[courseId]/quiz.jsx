@@ -1,0 +1,420 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/router";
+import { getSession } from "next-auth/react";
+import Header from "@/components/Header";
+import { motion, AnimatePresence } from "framer-motion";
+import PixelClimber from "@/components/CryptoClimb/PixelClimber";
+import rawQuestions from "@/data/cryptoClimbQuestions";
+
+// ===== Config =====
+const ATTEMPT_SIZE = 10;
+const DAILY_LIMIT = 3;
+
+// ===== Helpers =====
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function sampleN(arr, n) {
+  const a = shuffleArray(arr);
+  return a.slice(0, Math.min(n, a.length));
+}
+function prepareQuestions(qs) {
+  return shuffleArray(qs).map((q) => {
+    const withIdx = q.options.map((text, idx) => ({ text, idx }));
+    const shuffled = shuffleArray(withIdx);
+    const newAnswerIndex = shuffled.findIndex((o) => o.idx === q.answerIndex);
+    return { ...q, options: shuffled.map((o) => o.text), answerIndex: newAnswerIndex };
+  });
+}
+
+// ===== Daily attempts (localStorage) =====
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const attemptsKey = (courseId, lessonId) => `quizAttempts:${courseId}:${lessonId}:${todayKey()}`;
+const getRemainingAttempts = (courseId, lessonId) => {
+  try {
+    const raw = localStorage.getItem(attemptsKey(courseId, lessonId));
+    if (raw == null) {
+      localStorage.setItem(attemptsKey(courseId, lessonId), String(DAILY_LIMIT));
+      return DAILY_LIMIT;
+    }
+    const n = parseInt(raw, 10);
+    return Number.isNaN(n) ? DAILY_LIMIT : Math.max(0, n);
+  } catch {
+    return DAILY_LIMIT;
+  }
+};
+const setRemainingAttempts = (courseId, lessonId, n) => {
+  try {
+    localStorage.setItem(attemptsKey(courseId, lessonId), String(Math.max(0, n)));
+  } catch {}
+};
+
+export default function CryptoClimbQuiz({ courseId, lessonId }) {
+  const router = useRouter();
+  const lessonPath = `/dashboard/${courseId}/${lessonId}`;
+
+  // ---- attempts state ----
+  const [remaining, setRemaining] = useState(DAILY_LIMIT);
+  const attemptChargedRef = useRef(false); // ensure only once per run
+
+  // ---- quiz state (UI unchanged) ----
+  const [questions, setQuestions] = useState([]);
+  const totalQuestions = questions.length;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState(null);
+  const [answered, setAnswered] = useState(false);
+  const [score, setScore] = useState(0);
+  const [showResults, setShowResults] = useState(false);
+  const [shake, setShake] = useState(false);
+  const [coinBurstKey, setCoinBurstKey] = useState(0);
+
+  // init: attempts + questions
+  useEffect(() => {
+    const rem = getRemainingAttempts(courseId, lessonId);
+    setRemaining(rem);
+    if (rem <= 0) {
+      alert("No quiz attempts left for today. Try again tomorrow.");
+      router.replace(lessonPath);
+      return;
+    }
+    const picked = sampleN(rawQuestions, ATTEMPT_SIZE);
+    setQuestions(prepareQuestions(picked));
+  }, [courseId, lessonId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // decrement helper (once per visit/run)
+  const chargeAttemptOnce = () => {
+    if (attemptChargedRef.current) return;
+    attemptChargedRef.current = true;
+    const rem = getRemainingAttempts(courseId, lessonId);
+    if (rem > 0) {
+      const next = rem - 1;
+      setRemaining(next);
+      setRemainingAttempts(courseId, lessonId, next);
+    }
+  };
+
+  // condition 1: leaving to the lesson page consumes an attempt
+  useEffect(() => {
+    const onRouteStart = (url) => {
+      const to = url.replace(/\/+$/, "");
+      const target = lessonPath.replace(/\/+$/, "");
+      if (to === target) chargeAttemptOnce();
+    };
+    router.events.on("routeChangeStart", onRouteStart);
+    return () => router.events.off("routeChangeStart", onRouteStart);
+  }, [lessonPath, router.events]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const threshold = useMemo(() => Math.ceil(0.8 * Math.max(1, totalQuestions)), [totalQuestions]);
+  const climbLevel = score;
+  const current = questions[currentIndex];
+
+  const handleOptionClick = (idx) => {
+    if (answered || !current) return;
+    setSelectedOption(idx);
+    const isCorrect = idx === current.answerIndex;
+    if (isCorrect) {
+      setScore((s) => s + 1);
+      setCoinBurstKey((k) => k + 1);
+    } else {
+      setShake(true);
+      setTimeout(() => setShake(false), 450);
+    }
+    setAnswered(true);
+  };
+
+  const handleNext = () => {
+    if (!answered) return;
+    if (currentIndex + 1 < totalQuestions) {
+      setCurrentIndex((i) => i + 1);
+      setSelectedOption(null);
+      setAnswered(false);
+    } else {
+      setShowResults(true);
+      try {
+        const key = `cryptoClimb:${courseId}:${lessonId}`;
+        localStorage.setItem(key, JSON.stringify({ score, total: totalQuestions, at: Date.now() }));
+      } catch {}
+    }
+  };
+
+  const resetRun = () => {
+    const picked = sampleN(rawQuestions, ATTEMPT_SIZE);
+    setQuestions(prepareQuestions(picked));
+    setCurrentIndex(0);
+    setSelectedOption(null);
+    setAnswered(false);
+    setScore(0);
+    setShowResults(false);
+    attemptChargedRef.current = false; // fresh run
+  };
+
+  // condition 2: when the user FAILS the quiz, consume an attempt immediately
+  useEffect(() => {
+    if (showResults && score < threshold) {
+      chargeAttemptOnce();
+    }
+  }, [showResults, score, threshold]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRetry = () => {
+    const rem = getRemainingAttempts(courseId, lessonId);
+    setRemaining(rem);
+    if (rem <= 0) {
+      alert("No attempts left today.");
+      router.replace(lessonPath);
+      return;
+    }
+    resetRun(); // new run; will be charged again on fail/exit
+  };
+
+  const handleBackToLesson = () => {
+    chargeAttemptOnce(); // leaving costs an attempt
+    router.replace(lessonPath);
+  };
+
+  const handleContinue = async () => {
+    // PASS: record, flag, consume attempt (leaving), go back
+    try {
+      await fetch("/api/user/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId, lessonId, passed: true }),
+      });
+    } catch (e) {
+      console.error(e);
+    }
+    try {
+      localStorage.setItem(`quizPassed:${courseId}:${lessonId}`, "true");
+    } catch {}
+    chargeAttemptOnce();
+    router.replace(lessonPath);
+  };
+
+  const Coins = ({ k }) => (
+    <div key={k} className="pointer-events-none absolute inset-0 overflow-hidden">
+      {Array.from({ length: 10 }).map((_, i) => (
+        <span
+          key={i}
+          className="absolute block w-2.5 h-2.5 rounded-full bg-yellow-300/90 shadow"
+          style={{
+            left: `${50 + (Math.random() * 40 - 20)}%`,
+            top: `${42 + (Math.random() * 18 - 9)}%`,
+            animation: `coin-pop ${700 + Math.random() * 300}ms ease-out forwards`,
+            transform: `translate(${Math.random() * 80 - 40}px, ${Math.random() * -120 - 40}px)`,
+            opacity: 0.9,
+          }}
+        />
+      ))}
+      <style jsx global>{`
+        @keyframes coin-pop {
+          0% { transform: translate(0, 0) scale(0.6); opacity: 1; }
+          100% { transform: translate(var(--tw-translate-x), var(--tw-translate-y)) scale(1); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#0D0E1D] text-white">
+      {/* Header: Home -> Back to Lesson (quiz page only) */}
+      <Header backHref={lessonPath} backText="Back to Lesson" />
+
+      {/* Tip + attempts */}
+      <div className="bg-[#1A1B2D] border-y border-gray-700/60">
+        <div className="mx-auto max-w-6xl px-6 py-3 text-sm text-gray-300">
+          Tip: Study all sub-lessons before attempting the quiz.
+          <span className="ml-3 text-xs text-gray-400">
+            Attempts left today: <span className="font-semibold text-white">{remaining}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Main (UI unchanged) */}
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 py-8 md:grid-cols-2">
+        {/* Left: Question card */}
+        <div className="relative">
+          <AnimatePresence>
+            {answered && selectedOption === current?.answerIndex && <Coins k={coinBurstKey} />}
+          </AnimatePresence>
+
+          <div className="rounded-xl border border-gray-700 bg-[#1A1B2D] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)] md:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="text-xs text-gray-300">
+                Question <span className="font-semibold text-white">{currentIndex + 1}</span> / {totalQuestions}
+              </div>
+              <div className="text-xs text-gray-300">
+                Score <span className="font-semibold text-white">{score}</span>
+              </div>
+            </div>
+
+            {current ? (
+              <>
+                <h2 className="mb-4 text-lg font-semibold md:text-xl">{current.question}</h2>
+
+                <div className="space-y-3" role="listbox" aria-label="Answer options">
+                  {current.options.map((opt, idx) => {
+                    const isSelected = selectedOption === idx;
+                    const isCorrect = answered && idx === current.answerIndex;
+                    const isWrong = answered && isSelected && !isCorrect;
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleOptionClick(idx)}
+                        disabled={answered}
+                        aria-pressed={isSelected}
+                        className={[
+                          "w-full rounded-lg border px-4 py-3 text-left transition",
+                          "focus:outline-none focus:ring-2 focus:ring-indigo-400/60 focus:ring-offset-0",
+                          answered
+                            ? isCorrect
+                              ? "border-emerald-400 bg-emerald-500/10"
+                              : isWrong
+                              ? "border-rose-400 bg-rose-500/10"
+                              : "border-gray-700 bg-[#15162a]"
+                            : "border-gray-700 bg-[#15162a] hover:border-indigo-400/70 hover:bg-[#16183a]",
+                        ].join(" ")}
+                      >
+                        <span className="font-medium">{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-5 flex justify-end">
+                  <button
+                    onClick={handleNext}
+                    disabled={!answered}
+                    className={[
+                      "rounded-lg px-4 py-2 font-semibold",
+                      answered ? "bg-indigo-500 hover:bg-indigo-600" : "cursor-not-allowed bg-gray-700 opacity-60",
+                    ].join(" ")}
+                  >
+                    {currentIndex + 1 < totalQuestions ? "Next" : "Show results"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p>Loading questions…</p>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Climb panel + meta */}
+        <div className="space-y-4">
+          <PixelClimber climbLevel={climbLevel} totalFloors={totalQuestions || 10} shake={shake} />
+          <div className="rounded-xl border border-gray-700 bg-[#1A1B2D] p-4">
+            <div className="text-sm text-gray-300">
+              Required to pass: <span className="font-semibold text-white">≥ {threshold}</span> / {totalQuestions}
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded bg-gray-800">
+              <div
+                className="h-full bg-indigo-500 transition-all"
+                style={{ width: `${(climbLevel / Math.max(1, totalQuestions)) * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Results overlay */}
+      <AnimatePresence>
+        {showResults && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-xl rounded-2xl border border-gray-700 bg-[#121329] p-6 text-center"
+            >
+              {score >= threshold ? (
+                <>
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                    {Array.from({ length: 80 }).map((_, i) => (
+                      <span
+                        key={i}
+                        className="absolute block h-3 w-1.5"
+                        style={{
+                          left: `${Math.random() * 100}%`,
+                          top: `-${Math.random() * 20 + 5}%`,
+                          background: `hsl(${Math.random() * 360} 80% 60%)`,
+                          transform: `rotate(${Math.random() * 360}deg)`,
+                          animation: `confetti-fall ${1200 + Math.random() * 1200}ms linear forwards`,
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  <h2 className="text-2xl font-black text-emerald-300 md:text-3xl">PASS — Reach the castle!</h2>
+                  <p className="mt-2 text-gray-200">
+                    You scored <span className="font-semibold">{score}</span> / {totalQuestions}
+                  </p>
+                  <button
+                    onClick={handleContinue}
+                    className="mt-6 inline-flex items-center justify-center rounded-lg bg-emerald-500 px-5 py-2.5 font-semibold hover:bg-emerald-600"
+                  >
+                    Back to Lesson
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-2xl font-black text-rose-300 md:text-3xl">Try Again</h2>
+                  <p className="mt-2 text-gray-200">
+                    You scored <span className="font-semibold">{score}</span> / {totalQuestions}. You need{" "}
+                    <span className="font-semibold">{threshold}</span> to pass.
+                  </p>
+                  <div className="mt-6 flex items-center justify-center gap-3">
+                    <button
+                      onClick={handleRetry}
+                      className="inline-flex items-center justify-center rounded-lg bg-indigo-500 px-5 py-2.5 font-semibold hover:bg-indigo-600"
+                      disabled={remaining <= 0}
+                      title={remaining <= 0 ? "No attempts left today" : "Retry quiz"}
+                    >
+                      Retry Quiz
+                    </button>
+                    <button
+                      onClick={handleBackToLesson}
+                      className="inline-flex items-center justify-center rounded-lg bg-gray-700 px-5 py-2.5 font-semibold hover:bg-gray-600"
+                    >
+                      Back to Lesson
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// protect route + supply IDs
+export async function getServerSideProps(ctx) {
+  const session = await getSession(ctx);
+  if (!session) {
+    return { redirect: { destination: "/sign_in", permanent: false } };
+  }
+  const { courseId } = ctx.params;
+  const { lessonId } = ctx.query;
+
+  return {
+    props: {
+      courseId,
+      lessonId: Array.isArray(lessonId) ? lessonId[0] : lessonId || "1",
+    },
+  };
+}
