@@ -4,11 +4,13 @@ import { getSession } from "next-auth/react";
 import Header from "@/components/Header";
 import { motion, AnimatePresence } from "framer-motion";
 import PixelClimber from "@/components/CryptoClimb/PixelClimber";
-import rawQuestions from "@/data/cryptoClimbQuestions";
+
+// 🔁 Use the right question bank per course
+import cryptoQuestions from "@/data/cryptoClimbQuestions";
+import investingQuestions from "@/data/investingClimbQuestions";
 
 // ===== Config =====
-const ATTEMPT_SIZE = 10;
-const DAILY_LIMIT = 3;
+const ATTEMPT_SIZE = 10; // number of questions per run
 
 // ===== Helpers =====
 function shuffleArray(arr) {
@@ -32,38 +34,12 @@ function prepareQuestions(qs) {
   });
 }
 
-// ===== Daily attempts (localStorage) =====
-const todayKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
-const attemptsKey = (courseId, lessonId) => `quizAttempts:${courseId}:${lessonId}:${todayKey()}`;
-const getRemainingAttempts = (courseId, lessonId) => {
-  try {
-    const raw = localStorage.getItem(attemptsKey(courseId, lessonId));
-    if (raw == null) {
-      localStorage.setItem(attemptsKey(courseId, lessonId), String(DAILY_LIMIT));
-      return DAILY_LIMIT;
-    }
-    const n = parseInt(raw, 10);
-    return Number.isNaN(n) ? DAILY_LIMIT : Math.max(0, n);
-  } catch {
-    return DAILY_LIMIT;
-  }
-};
-const setRemainingAttempts = (courseId, lessonId, n) => {
-  try {
-    localStorage.setItem(attemptsKey(courseId, lessonId), String(Math.max(0, n)));
-  } catch {}
-};
-
 export default function CryptoClimbQuiz({ courseId, lessonId }) {
   const router = useRouter();
   const lessonPath = `/dashboard/${courseId}/${lessonId}`;
 
-  // ---- attempts state ----
-  const [remaining, setRemaining] = useState(DAILY_LIMIT);
-  const attemptChargedRef = useRef(false); // ensure only once per run
+  // 👉 Choose question bank by course (investing vs crypto)
+  const bank = courseId === "investing" ? investingQuestions : cryptoQuestions;
 
   // ---- quiz state (UI unchanged) ----
   const [questions, setQuestions] = useState([]);
@@ -76,41 +52,11 @@ export default function CryptoClimbQuiz({ courseId, lessonId }) {
   const [shake, setShake] = useState(false);
   const [coinBurstKey, setCoinBurstKey] = useState(0);
 
-  // init: attempts + questions
+  // init: questions (no daily limit / gating)
   useEffect(() => {
-    const rem = getRemainingAttempts(courseId, lessonId);
-    setRemaining(rem);
-    if (rem <= 0) {
-      alert("No quiz attempts left for today. Try again tomorrow.");
-      router.replace(lessonPath);
-      return;
-    }
-    const picked = sampleN(rawQuestions, ATTEMPT_SIZE);
+    const picked = sampleN(bank, ATTEMPT_SIZE);
     setQuestions(prepareQuestions(picked));
-  }, [courseId, lessonId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // decrement helper (once per visit/run)
-  const chargeAttemptOnce = () => {
-    if (attemptChargedRef.current) return;
-    attemptChargedRef.current = true;
-    const rem = getRemainingAttempts(courseId, lessonId);
-    if (rem > 0) {
-      const next = rem - 1;
-      setRemaining(next);
-      setRemainingAttempts(courseId, lessonId, next);
-    }
-  };
-
-  // condition 1: leaving to the lesson page consumes an attempt
-  useEffect(() => {
-    const onRouteStart = (url) => {
-      const to = url.replace(/\/+$/, "");
-      const target = lessonPath.replace(/\/+$/, "");
-      if (to === target) chargeAttemptOnce();
-    };
-    router.events.on("routeChangeStart", onRouteStart);
-    return () => router.events.off("routeChangeStart", onRouteStart);
-  }, [lessonPath, router.events]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bank]);
 
   const threshold = useMemo(() => Math.ceil(0.8 * Math.max(1, totalQuestions)), [totalQuestions]);
   const climbLevel = score;
@@ -146,41 +92,25 @@ export default function CryptoClimbQuiz({ courseId, lessonId }) {
   };
 
   const resetRun = () => {
-    const picked = sampleN(rawQuestions, ATTEMPT_SIZE);
+    const picked = sampleN(bank, ATTEMPT_SIZE);
     setQuestions(prepareQuestions(picked));
     setCurrentIndex(0);
     setSelectedOption(null);
     setAnswered(false);
     setScore(0);
     setShowResults(false);
-    attemptChargedRef.current = false; // fresh run
   };
 
-  // condition 2: when the user FAILS the quiz, consume an attempt immediately
-  useEffect(() => {
-    if (showResults && score < threshold) {
-      chargeAttemptOnce();
-    }
-  }, [showResults, score, threshold]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleRetry = () => {
-    const rem = getRemainingAttempts(courseId, lessonId);
-    setRemaining(rem);
-    if (rem <= 0) {
-      alert("No attempts left today.");
-      router.replace(lessonPath);
-      return;
-    }
-    resetRun(); // new run; will be charged again on fail/exit
+    resetRun(); // unlimited retries
   };
 
   const handleBackToLesson = () => {
-    chargeAttemptOnce(); // leaving costs an attempt
-    router.replace(lessonPath);
+    router.replace(lessonPath); // no attempt charge
   };
 
   const handleContinue = async () => {
-    // PASS: record, flag, consume attempt (leaving), go back
+    // PASS: record, flag, go back
     try {
       await fetch("/api/user/progress", {
         method: "POST",
@@ -193,7 +123,6 @@ export default function CryptoClimbQuiz({ courseId, lessonId }) {
     try {
       localStorage.setItem(`quizPassed:${courseId}:${lessonId}`, "true");
     } catch {}
-    chargeAttemptOnce();
     router.replace(lessonPath);
   };
 
@@ -226,13 +155,10 @@ export default function CryptoClimbQuiz({ courseId, lessonId }) {
       {/* Header: Home -> Back to Lesson (quiz page only) */}
       <Header backHref={lessonPath} backText="Back to Lesson" />
 
-      {/* Tip + attempts */}
+      {/* Tip (attempts counter removed) */}
       <div className="bg-[#1A1B2D] border-y border-gray-700/60">
         <div className="mx-auto max-w-6xl px-6 py-3 text-sm text-gray-300">
           Tip: Study all sub-lessons before attempting the quiz.
-          <span className="ml-3 text-xs text-gray-400">
-            Attempts left today: <span className="font-semibold text-white">{remaining}</span>
-          </span>
         </div>
       </div>
 
@@ -380,8 +306,6 @@ export default function CryptoClimbQuiz({ courseId, lessonId }) {
                     <button
                       onClick={handleRetry}
                       className="inline-flex items-center justify-center rounded-lg bg-indigo-500 px-5 py-2.5 font-semibold hover:bg-indigo-600"
-                      disabled={remaining <= 0}
-                      title={remaining <= 0 ? "No attempts left today" : "Retry quiz"}
                     >
                       Retry Quiz
                     </button>

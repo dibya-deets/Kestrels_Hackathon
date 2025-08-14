@@ -23,8 +23,7 @@ const COURSE_META = {
   },
   crypto: {
     title: "Cryptocurrency 101",
-    description:
-      "Understand blockchain, wallets, and crypto markets.",
+    description: "Understand blockchain, wallets, and crypto markets.",
     banner: "/assets/images/crypto.gif",
     badge: "Beginner",
   },
@@ -90,7 +89,9 @@ export default function Dashboard({ user }) {
     };
   }, [intro.open]);
 
-  const enterCourse = (id) => router.push(`/dashboard/${id}`);
+  const routerPushCourse = (id) => router.push(`/dashboard/${id}`);
+
+  const enterCourse = (id) => routerPushCourse(id);
 
   const handleCourseClick = async (id) => {
     const src = await resolveIntroSrc(id);
@@ -100,7 +101,7 @@ export default function Dashboard({ user }) {
       setTimeout(() => {
         const v = videoRef.current;
         if (!v) return;
-        v.muted = true; // autoplay requirement
+        v.muted = true; // required for autoplay
         v.play?.().catch(() => {});
       }, 0);
     } else {
@@ -120,11 +121,11 @@ export default function Dashboard({ user }) {
 
   return (
     <div className="relative min-h-screen bg-[#0a0a15] text-white">
-      {/* === BACKGROUND (always behind) === */}
+      {/* Background */}
       <Cloud />
       <div className="fixed inset-0 z-0 bg-black/30 pointer-events-none" />
 
-      {/* === FOREGROUND (header + page content) === */}
+      {/* Foreground */}
       <div className="relative z-10">
         <Header />
 
@@ -179,56 +180,74 @@ export default function Dashboard({ user }) {
                   />
                 </div>
 
-                <p className={`${comfortaa.className} text-pink-400 text-xs mt-2`}>
-                  🕹 {course.completedLessons}/{course.totalLessons} Lessons Completed
+                <p
+                  className={`${comfortaa.className} text-pink-400 text-xs mt-2`}
+                >
+                  🕹 {course.completedLessons}/{course.totalLessons} Lessons
+                  Completed
                 </p>
               </motion.article>
             ))}
           </div>
         </div>
 
-        {/* Full-page intro overlay */}
+        {/* ===================== INTRO OVERLAY (updated) ===================== */}
         {intro.open && (
-          <div className="fixed inset-0 z-[1000] bg-black">
-            <video
-              key={intro.src}
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-fill"
-              src={intro.src}
-              muted={isMuted}
-              playsInline
-              preload="auto"
-              autoPlay
-              poster={
-                intro.id === "crypto"
-                  ? "/assets/images/crypto.png"
-                  : "/assets/images/crypto1.png"
-              }
-              onLoadedMetadata={() => {
-                const v = videoRef.current;
-                if (!v) return;
-                v.muted = isMuted;
-                v.play?.().catch(() => {});
-              }}
-              onCanPlay={() => {
-                const v = videoRef.current;
-                if (!v) return;
-                v.muted = isMuted;
-                v.play?.().catch(() => {});
-              }}
-              onEnded={() => enterCourse(intro.id)}
-              onError={() => {
-                setIntro((s) => ({ ...s, error: true }));
-                setTimeout(() => enterCourse(intro.id), 900);
-              }}
-              controls={false}
-              controlsList="noplaybackrate nodownload noremoteplayback"
-              disablePictureInPicture
-            >
-              <source src={intro.src} type="video/mp4" />
-            </video>
+          <div
+            className="
+              fixed inset-0 z-[9999]
+              bg-black
+              grid
+              grid-rows-[1fr_auto]
+              [--safe-bottom:env(safe-area-inset-bottom)]
+            "
+          >
+            {/* Row 1: Video centered and as large as possible */}
+            <div className="flex items-center justify-center px-3">
+              {/* This box leaves ~84px for the buttons row, so video won't overlap them */}
+              <div className="relative w-screen h-[calc(100vh-84px-var(--safe-bottom))]">
+                <video
+                  key={intro.src}
+                    ref={videoRef}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                  src={intro.src}
+                  muted={isMuted}
+                  playsInline
+                  preload="auto"
+                  autoPlay
+                  poster={
+                    intro.id === "crypto"
+                      ? "/assets/images/crypto.png"
+                      : "/assets/images/crypto1.gif"
+                  }
+                  onLoadedMetadata={() => {
+                    const v = videoRef.current;
+                    if (!v) return;
+                    v.muted = isMuted;
+                    v.play?.().catch(() => {});
+                  }}
+                  onCanPlay={() => {
+                    const v = videoRef.current;
+                    if (!v) return;
+                    v.muted = isMuted;
+                    v.play?.().catch(() => {});
+                  }}
+                  onEnded={() => enterCourse(intro.id)}
+                  onError={() => {
+                    setIntro((s) => ({ ...s, error: true }));
+                    setTimeout(() => enterCourse(intro.id), 900);
+                  }}
+                  controls={false}
+                  controlsList="noplaybackrate nodownload noremoteplayback"
+                  disablePictureInPicture
+                >
+                  <source src={intro.src} type="video/mp4" />
+                </video>
+              </div>
+            </div>
 
-            <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-4 px-4">
+            {/* Row 2: Buttons (always visible, centered, below the video) */}
+            <div className="pb-[max(12px,var(--safe-bottom))] pt-3 flex items-center justify-center gap-3">
               <button
                 onClick={handleToggleMute}
                 className="bg-white/10 hover:bg-white/20 text-white text-xs md:text-sm px-3 py-2 rounded border border-white/30"
@@ -243,10 +262,6 @@ export default function Dashboard({ user }) {
               >
                 Skip intro
               </button>
-            </div>
-
-            <div className="absolute top-4 left-0 right-0 text-center text-gray-300 font-['Press_Start_2P'] text-[10px] md:text-xs opacity-70 px-4">
-              {intro.error ? "Intro video failed to load… entering course" : ""}
             </div>
           </div>
         )}

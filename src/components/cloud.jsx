@@ -1,58 +1,57 @@
-'use client';
-
-import { useEffect, useRef } from 'react';
+// src/components/cloud.jsx (or wherever this lives)
+import { useEffect, useRef } from "react";
 
 export default function Cloud() {
   const starsRef = useRef(null);
   const shootsRef = useRef(null);
 
   const fitCanvas = (canvas) => {
+    if (!canvas || typeof window === "undefined") return null;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const { innerWidth: w, innerHeight: h } = window;
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     return ctx;
   };
 
   // Stars + twinkle
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const canvas = starsRef.current;
-    let ctx = fitCanvas(canvas);
+    const ctx = fitCanvas(canvas);
+    if (!canvas || !ctx) return;
 
-    // Tip: 5000 is heavy on some laptops; 800–1500 often looks great.
     const STAR_COUNT = 1500;
     const stars = Array.from({ length: STAR_COUNT }).map(() => ({
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
       r: Math.random() * 1.8 + 0.7,
-      base: Math.random() * 0.4 + 0.35,     // higher base brightness
-      amp: Math.random() * 0.7 + 0.6,       // bigger twinkle swing
+      base: Math.random() * 0.4 + 0.35,
+      amp: Math.random() * 0.7 + 0.6,
       phase: Math.random() * Math.PI * 2,
-      speedY: Math.random() * 0.12 + 0.08,  // slight drift
-      flash: Math.random() * 400 + 200,     // frames until next flash
+      speedY: Math.random() * 0.12 + 0.08,
+      flash: Math.random() * 400 + 200,
     }));
 
-    let af;
+    let af = 0;
     const render = (t) => {
+      if (!canvas) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = "#ffffff";
 
       for (const s of stars) {
-        // faster twinkle frequency (was 0.002)
         const tw = s.base + Math.sin(t * 0.006 + s.phase) * s.amp * 0.55;
-
-        // occasional quick flash
         s.flash -= 1;
         let alpha = Math.max(0, Math.min(1, tw));
         if (s.flash < 0) {
-          alpha = 1;                  // brief pop
+          alpha = 1;
           s.flash = Math.random() * 400 + 200;
         }
-
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
@@ -68,22 +67,25 @@ export default function Cloud() {
 
     af = requestAnimationFrame(render);
 
-    const onResize = () => (ctx = fitCanvas(canvas));
-    window.addEventListener('resize', onResize);
+    const onResize = () => fitCanvas(canvas);
+    window.addEventListener("resize", onResize);
     return () => {
       cancelAnimationFrame(af);
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
   // Shooting stars
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const canvas = shootsRef.current;
-    let ctx = fitCanvas(canvas);
+    const ctx = fitCanvas(canvas);
+    if (!canvas || !ctx) return;
 
     const trails = [];
-    let af;
+    let af = 0;
     const spawn = () => {
+      if (!canvas) return;
       const y = Math.random() * window.innerHeight * 0.6 + 20;
       trails.push({
         x: -50,
@@ -98,6 +100,7 @@ export default function Cloud() {
     setTimeout(spawn, 1500);
 
     const render = () => {
+      if (!canvas) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let i = trails.length - 1; i >= 0; i--) {
         const s = trails[i];
@@ -106,8 +109,8 @@ export default function Cloud() {
         s.y += s.vy;
 
         const grad = ctx.createLinearGradient(s.x - 80, s.y - 20, s.x, s.y);
-        grad.addColorStop(0, 'rgba(255,255,255,0)');
-        grad.addColorStop(1, 'rgba(255,255,255,0.9)');
+        grad.addColorStop(0, "rgba(255,255,255,0)");
+        grad.addColorStop(1, "rgba(255,255,255,0.9)");
         ctx.strokeStyle = grad;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -123,26 +126,46 @@ export default function Cloud() {
     };
     af = requestAnimationFrame(render);
 
-    const onResize = () => (ctx = fitCanvas(canvas));
-    window.addEventListener('resize', onResize);
+    const onResize = () => fitCanvas(canvas);
+    window.addEventListener("resize", onResize);
     return () => {
       cancelAnimationFrame(af);
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener("resize", onResize);
     };
   }, []);
 
-  // Parallax
+  // Parallax (RAF-throttled + null-guarded)
   useEffect(() => {
-    const onScroll = () => {
+    if (typeof window === "undefined") return;
+
+    let raf = 0;
+    const root = document.documentElement;
+
+    const tick = () => {
       const y = window.scrollY || 0;
-      starsRef.current.style.transform = `translateY(${y * 0.15}px)`;
-      shootsRef.current.style.transform = `translateY(${y * 0.12}px)`;
-      document.documentElement.style.setProperty('--parallax-y1', `${y * 0.35}px`);
-      document.documentElement.style.setProperty('--parallax-y2', `${y * 0.5}px`);
+      const starsEl = starsRef.current;
+      const shootsEl = shootsRef.current;
+
+      if (starsEl) starsEl.style.transform = `translateY(${y * 0.15}px)`;
+      if (shootsEl) shootsEl.style.transform = `translateY(${y * 0.12}px)`;
+
+      root.style.setProperty("--parallax-y1", `${y * 0.35}px`);
+      root.style.setProperty("--parallax-y2", `${y * 0.5}px`);
     };
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(tick);
+    };
+
+    // initial
+    tick();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
   }, []);
 
   return (
@@ -162,21 +185,21 @@ export default function Cloud() {
           position: fixed;
           inset: 0;
           z-index: 0;
-          background-image: url('/assets/images/cloud.png'); /* fixed */
+          background-image: url('/assets/images/cloud.png');
           background-repeat: repeat-x;
           background-position: center bottom;
           background-size: auto 100%;
           image-rendering: pixelated;
           opacity: 0.9;
+          transform: translateZ(0);
         }
-        /* faster clouds */
         .cloud-1 {
-          animation: drift1 20s linear infinite;  /* was 120s */
+          animation: drift1 20s linear infinite;
           filter: brightness(0.95);
           transform: translateY(var(--parallax-y1, 0));
         }
         .cloud-2 {
-          animation: drift2 35s linear infinite reverse; /* was 180s */
+          animation: drift2 35s linear infinite reverse;
           opacity: 0.6;
           transform: translateY(var(--parallax-y2, 0));
         }

@@ -34,7 +34,7 @@ export default function SignInPage() {
         <div className="flex flex-col items-center mb-6">
           <Image src="/assets/mascot.png" width={60} height={60} alt="Mascot" />
           <h1 className="text-xl font-pixel text-[#e0c000] mt-4">InvesTerra</h1>
-          <p className="text-xs text-gray-600 font-sans text-center mt-1">
+          <p className="text-sm text-gray-600 font-sans text-center mt-1">
             Welcome back to your finance playground
           </p>
         </div>
@@ -61,12 +61,22 @@ export default function SignInPage() {
           </button>
         </form>
 
-        {error && <p className="text-red-500 mt-4 text-center font-sans">{error}</p>}
+        {error && (
+          <p className="text-red-500 mt-4 text-center font-sans">{error}</p>
+        )}
 
-        <p className="text-xs text-gray-600 text-center mt-6 font-sans">
+        {/* Sign up line */}
+        <p className="text-sm text-gray-600 text-center mt-6 font-sans">
           Don’t have an account?{" "}
           <a href="/signup" className="text-[#e0c000] hover:underline">
             Sign up
+          </a>
+        </p>
+
+        {/* Forgot password UNDER the sign up line */}
+        <p className="text-sm text-gray-600 text-center mt-3 font-sans">
+          <a href="/forgot-password" className="text-[#e0c000] hover:underline">
+            Forgot your password?
           </a>
         </p>
       </div>

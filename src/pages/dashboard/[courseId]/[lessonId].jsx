@@ -12,16 +12,6 @@ import Image from "next/image";
 
 const comfortaa = Comfortaa({ subsets: ["latin"], weight: ["400"] });
 
-// --- Badge logic helper (exactly 3) ---
-function getCourseBadges(completedCount, total) {
-  const half = Math.ceil(total / 2);
-  return [
-    { id: "first", label: "First Steps", desc: "Complete your first lesson", earned: completedCount >= 1, img: "/assets/images/badges/badge6.png" },
-    { id: "half",  label: "Halfway Hero", desc: `Complete ${half}+ lessons`,    earned: completedCount >= half, img: "/assets/images/badges/badge5.png" },
-    { id: "all",   label: "Course Conqueror", desc: "Complete all lessons",      earned: completedCount >= total, img: "/assets/images/badges/badge4.png" },
-  ];
-}
-
 // --- helpers for persistent "read" sub-lessons + resume point ---
 const toId = (x) => String(x);
 const READ_KEY = (cid, lid) => `investerra:readSubs:${cid}:${lid}`;
@@ -37,12 +27,6 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
   const [markedOpened, setMarkedOpened] = useState([]);         // PERSISTED "read" IDs (strings)
   const [videoOpen, setVideoOpen] = useState(true);
   const hasMarkedComplete = useRef(false);
-
-  // derived
-  const totalLessons = Object.keys(lessonContent[courseId] || {}).length;
-  const prevCompletedCountRef = useRef(
-    (initialUser?.progress?.[courseId]?.lessonsCompleted || []).length
-  );
 
   // fetch lesson meta
   useEffect(() => {
@@ -78,7 +62,6 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
   }, [markedOpened, courseId, lessonId]);
 
   // ✅ NEW: when arriving (or returning), open the NEXT UNREAD sub-lesson
-  // If all are read, open the last saved "last open" id (or the final sub).
   useEffect(() => {
     if (!lesson) return;
     const subs = lesson.subLessons || [];
@@ -107,15 +90,12 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     setOpenedSubLessons([targetId]);
   }, [lesson, markedOpened, courseId, lessonId]);
 
-  // refresh progress and show newly-earned badges (if any)
+  // ===== Progress refresh (kept) =====
   const refreshProgress = async () => {
     try {
       const res = await fetch(`/api/user/progress?courseId=${courseId}`);
       if (!res.ok) return null;
       const data = await res.json();
-
-      const before = prevCompletedCountRef.current;
-      const after = (data.lessonsCompleted || []).length;
 
       setUser((prev) => ({
         ...prev,
@@ -130,15 +110,6 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
         },
       }));
 
-      if (after > before) {
-        const beforeBadges = getCourseBadges(before, totalLessons);
-        const afterBadges = getCourseBadges(after, totalLessons);
-        const newly = afterBadges.filter((b, i) => b.earned && !beforeBadges[i].earned);
-        if (newly.length) {
-          alert(`New badge${newly.length > 1 ? "s" : ""} earned!\n${newly.map(b => `🏅 ${b.label}`).join("\n")}`);
-        }
-        prevCompletedCountRef.current = after;
-      }
       return data;
     } catch (e) {
       console.error("refreshProgress failed", e);
@@ -175,7 +146,6 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId, lessonId]);
 
   // mark complete manually (kept)
@@ -215,7 +185,21 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     );
   };
 
-  // make a Set for faster membership checks
+  // ===== Derived values (CLEANED) =====
+  const courseLessons = useMemo(() => lessonContent[courseId] || {}, [courseId]);
+  const validLessonIds = useMemo(() => Object.keys(courseLessons), [courseLessons]);
+
+  const completedRaw = user.progress?.[courseId]?.lessonsCompleted || [];
+  const completedLessonsClean = useMemo(
+    () => [...new Set(completedRaw)].filter((id) => validLessonIds.includes(id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(completedRaw), validLessonIds.join("|")]
+  );
+
+  const totalLessons = validLessonIds.length;
+  const unlockedCount = Math.min(completedLessonsClean.length, totalLessons);
+
+  // make a Set for faster membership checks (for sub-lesson list)
   const markedSet = useMemo(() => new Set(markedOpened.map(toId)), [markedOpened]);
 
   if (!lesson) return <p className="text-white p-6">Loading lesson...</p>;
@@ -224,9 +208,7 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
   const levelLabel = user.level || "Seedling";
   const xp = user.xp || 0;
   const xpPct = Math.min(((xp % 100) / 100) * 100, 100);
-  const completedLessons = user.progress?.[courseId]?.lessonsCompleted || [];
-  const badges = getCourseBadges(completedLessons.length, totalLessons);
-  const heroBg = courseId === "crypto" ? "/assets/images/crypto.gif" : "/assets/images/image.gif";
+  const heroBg = courseId === "crypto" ? "/assets/crypto1.gif" : "/assets/investing1.gif";
 
   const startGamifiedQuiz = () => {
     try { localStorage.setItem("lastQuizLesson", JSON.stringify({ courseId, lessonId })); } catch {}
@@ -352,7 +334,7 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
 
           <div className={`border-b border-gray-600 pb-3 ${comfortaa.className}`}>
             <h3 className="font-bold mb-1">Course Progress</h3>
-            <p>Lessons Completed: {completedLessons.length}</p>
+            <p>Lessons Completed: {completedLessonsClean.length}</p>
             <p>Total Lessons: {totalLessons}</p>
           </div>
 
@@ -374,33 +356,64 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
             </ul>
           </div>
 
-          {/* Course Badges */}
-          <div className={comfortaa.className}>
-            <h3 className="font-bold">Course Badges</h3>
-            <div className="mt-6 grid grid-cols-3 gap-8 place-items-center">
-              {badges.slice(0, 3).map((b) => {
-                const locked = !b.earned;
+          {/* Course Badges — centered PNGs in circles */}
+          <div className={`${comfortaa.className} border-t border-gray-600 pt-4`}>
+            <h3 className="font-bold mb-3">Course Badges</h3>
+
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { id: "b1", img: "/assets/images/badges/badge1.png", label: "First Steps" },
+                { id: "b2", img: "/assets/images/badges/badge2.png", label: "Halfway Hero" },
+                { id: "b3", img: "/assets/images/badges/badge3.png", label: "Course Conqueror" },
+              ].map((b, i) => {
+                const unlocked = unlockedCount >= i + 1;
                 return (
-                  <div key={b.id} title={`${b.label} — ${b.desc}`} className="text-center">
-                    <div
+                  <div key={b.id} className="flex flex-col items-center text-center">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.28, delay: i * 0.05 }}
                       className={[
-                        "relative w-24 h-24 md:w-28 md:h-28",
-                        locked ? "grayscale blur-[1.5px] opacity-60" : "opacity-100",
-                        "transition-all duration-300",
+                        "relative rounded-full overflow-hidden select-none bg-black",
+                        "flex items-center justify-center",               // center the PNG
+                        "w-16 h-16 md:w-10 md:h-10",                       // circle size
+                        unlocked ? "ring-2 ring-yellow-300/70 shadow" : "ring-2 ring-gray-600/60",
                       ].join(" ")}
-                      style={{ imageRendering: "pixelated" }}
+                      aria-label={`${b.label} ${unlocked ? "(unlocked)" : "(locked)"}`}
+                      title={b.label}
                     >
-                      <Image src={b.img} alt={b.label} fill className="object-contain select-none" />
-                    </div>
-                    <span className="block text-sm md:text-base mt-3 leading-tight">{b.label}</span>
+                      {/* PNG fills most of the circle, stays perfectly centered */}
+                      <img
+                        src={b.img}
+                        alt={b.label}
+                        className={[
+                          "className='block object-contain object-center w-[90%] h-[90%] md:w-[94%] md:h-[94%] scale-[7.08]'"
+                        ].join(" ")}
+                      />
+                      {!unlocked && (
+                        <div className="pointer-events-none absolute inset-0 bg-black/25 flex items-center justify-center">
+                          <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-85">
+                            <path fill="#e5e7eb" d="M17 8V7a5 5 0 1 0-10 0v1H5v13h14V8h-2Zm-8 0V7a3 3 0 1 1 6 0v1H9Zm3 9a2 2 0 1 1 0-4a2 2 0 0 1 0 4Z"/>
+                          </svg>
+                        </div>
+                      )}
+                    </motion.div>
+
+                    <span className="mt-2 text-[11px] md:text-xs text-gray-200">{b.label}</span>
+                    <span className={`text-[10px] ${unlocked ? "text-emerald-400" : "text-gray-400"}`}>
+                      {unlocked ? "Unlocked" : "Locked"}
+                    </span>
                   </div>
                 );
               })}
             </div>
-            {!badges.every((b) => b.earned) && (
-              <p className="text-xs text-gray-400 mt-3">Complete lessons to unlock badges.</p>
-            )}
+
+            <p className="mt-3 text-[11px] text-gray-400">
+              Unlock a badge each time you complete a lesson quiz.
+            </p>
           </div>
+
+
         </div>
       </div>
     </div>

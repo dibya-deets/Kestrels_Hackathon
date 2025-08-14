@@ -1,3 +1,4 @@
+// src/pages/dashboard/[courseId]/index.jsx
 import Header from "@/components/Header";
 import { getSession } from "next-auth/react";
 import prisma from "@/lib/prisma";
@@ -20,26 +21,35 @@ const COURSE_TITLES = {
 const HERO_BG = {
   crypto: "/assets/crypto1.gif",
   investing: "/assets/investing1.gif",
-  // stocks: "/assets/stocks.gif",
 };
 
-// Per-course background position (shift right to show the rock)
+// Per-course background position
 const HERO_BG_POS = {
   crypto: "center center",
-  investing: "40% bottom", // tweak 75–85% if needed; or try "right 45%"
+  investing: "40% bottom",
 };
 
 export default function CourseOverview({ user, courseId }) {
   const courseLessons = lessonContent[courseId] ?? {};
-  const completedLessons = user.progress?.[courseId]?.lessonsCompleted ?? [];
+  const validLessonIds = Object.keys(courseLessons);
 
+  // CLEANED completed lessons: de-duped + only in this course
+  const completedRaw = user.progress?.[courseId]?.lessonsCompleted ?? [];
+  const completedLessons = [...new Set(completedRaw)].filter((id) =>
+    validLessonIds.includes(id)
+  );
+
+  // Unlock rule: first lesson always unlocked; otherwise previous must be completed
   const isUnlocked = (index) => {
     if (index === 0) return true;
-    return completedLessons.includes(Object.keys(courseLessons)[index - 1]);
+    const prevId = validLessonIds[index - 1];
+    return completedLessons.includes(prevId);
   };
 
-  // Title + hero background (minimal edits)
-  const title = COURSE_TITLES[courseId] ?? (courseId?.[0]?.toUpperCase() + courseId?.slice(1));
+  // Title + hero
+  const title =
+    COURSE_TITLES[courseId] ??
+    (courseId?.[0]?.toUpperCase() + courseId?.slice(1));
   const heroBg = HERO_BG[courseId] ?? HERO_BG.crypto;
   const heroPos = HERO_BG_POS[courseId] ?? "center center";
 
@@ -70,7 +80,8 @@ export default function CourseOverview({ user, courseId }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-8 py-10">
         {/* Lesson Box Container */}
         <div className="md:col-span-2 bg-[#1A1B2D] p-6 rounded-xl border border-gray-700 space-y-4">
-          {Object.entries(courseLessons).map(([lessonId, lesson], idx) => {
+          {validLessonIds.map((lessonId, idx) => {
+            const lesson = courseLessons[lessonId];
             const unlocked = isUnlocked(idx);
             const completed = completedLessons.includes(lessonId);
             return (
@@ -120,33 +131,25 @@ export default function CourseOverview({ user, courseId }) {
           <div className={`${comfortaa.className} border-b border-gray-600 pb-3`}>
             <h3 className="font-bold mb-1">Course Progress</h3>
             <p>Lessons Completed: {completedLessons.length}</p>
-            <p>Total Lessons: {Object.keys(courseLessons).length}</p>
-          </div>
-
-          <div className={`${comfortaa.className} border-b border-gray-600 pb-3`}>
-            <h3 className="font-bold mb-1">Lesson Progress</h3>
-            <ul className="text-sm space-y-1">
-              {Object.entries(courseLessons).map(([lessonId, lesson], idx) => (
-                <li
-                  key={lessonId}
-                  className={
-                    completedLessons.includes(lessonId)
-                      ? "text-yellow-400 font-semibold"
-                      : "text-gray-300"
-                  }
-                >
-                  {idx + 1}. {lesson.title}
-                </li>
-              ))}
-            </ul>
+            <p>Total Lessons: {validLessonIds.length}</p>
           </div>
 
           <div className={`${comfortaa.className}`}>
-            <h3 className="font-bold">Course Badges</h3>
-            <div className="flex gap-2 mt-2">
-              <span className="w-8 h-8 bg-yellow-400 rounded-full" />
-              <span className="w-8 h-8 bg-gray-500 rounded-full" />
-            </div>
+            <h3 className="font-bold mb-1">Lesson Progress</h3>
+            <ul className="text-sm space-y-1">
+              {validLessonIds.map((lessonId, idx) => {
+                const lesson = courseLessons[lessonId];
+                const done = completedLessons.includes(lessonId);
+                return (
+                  <li
+                    key={lessonId}
+                    className={done ? "text-yellow-400 font-semibold" : "text-gray-300"}
+                  >
+                    {idx + 1}. {lesson.title}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
       </div>
