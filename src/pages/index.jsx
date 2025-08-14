@@ -292,8 +292,8 @@ export default function Home() {
           <div className="footer-column">
             <h4 className="footer-heading">ABOUT</h4>
             <ul className="footer-links">
-              <li><a href="#" className={comfortaa.className}>Our Mission</a></li>
-              <li><a href="#" className={comfortaa.className}>Team</a></li>
+              <li><a href="/our-mission" className={comfortaa.className}>Our Mission</a></li>
+              <li><a href="/team" className={comfortaa.className}>Team</a></li>
             </ul>
           </div>
 
