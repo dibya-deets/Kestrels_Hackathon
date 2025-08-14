@@ -12,13 +12,19 @@ export default function SignInPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(""); // clear any old error
     const res = await signIn("credentials", {
       email,
       password,
-      callbackUrl: "/dashboard",
-      redirect: true,
+      redirect: false, // keep on same page so we can show error
     });
-    if (res?.error) setError("Invalid credentials");
+
+    if (res?.error) {
+      setError("Invalid credentials");
+    } else {
+      // successful login → redirect manually
+      window.location.href = "/dashboard";
+    }
   };
 
   return (
