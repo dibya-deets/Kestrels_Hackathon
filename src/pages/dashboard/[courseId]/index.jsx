@@ -1,4 +1,5 @@
 // src/pages/dashboard/[courseId]/index.jsx
+import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/Header";
 import { getSession } from "next-auth/react";
 import prisma from "@/lib/prisma";
@@ -6,56 +7,69 @@ import lessonContent from "@/data/lessonContent";
 import { Comfortaa } from "next/font/google";
 import Link from "next/link";
 
-const comfortaa = Comfortaa({
-  subsets: ["latin"],
-  weight: ["400"],
-});
+const comfortaa = Comfortaa({ subsets: ["latin"], weight: ["400"] });
 
-// Map display names
-const COURSE_TITLES = {
-  crypto: "Cryptocurrency",
-  investing: "Investing",
-};
+const COURSE_TITLES = { crypto: "Cryptocurrency", investing: "Investing" };
+const HERO_BG = { crypto: "/assets/crypto1.gif", investing: "/assets/investing1.gif" };
+const HERO_BG_POS = { crypto: "center center", investing: "40% bottom" };
 
-// Map background images
-const HERO_BG = {
-  crypto: "/assets/crypto1.gif",
-  investing: "/assets/investing1.gif",
-};
+export default function CourseOverview({ user: ssrUser, courseId }) {
+  // 🔄 local user state for live progress refresh
+  const [user, setUser] = useState(ssrUser);
 
-// Per-course background position
-const HERO_BG_POS = {
-  crypto: "center center",
-  investing: "40% bottom",
-};
-
-export default function CourseOverview({ user, courseId }) {
   const courseLessons = lessonContent[courseId] ?? {};
-  const validLessonIds = Object.keys(courseLessons);
+  const validLessonIds = useMemo(() => Object.keys(courseLessons), [courseLessons]);
 
-  // CLEANED completed lessons: de-duped + only in this course
+  // Clean completed list
   const completedRaw = user.progress?.[courseId]?.lessonsCompleted ?? [];
-  const completedLessons = [...new Set(completedRaw)].filter((id) =>
-    validLessonIds.includes(id)
+  const completedLessons = useMemo(
+    () => [...new Set(completedRaw)].filter((id) => validLessonIds.includes(id)),
+    [completedRaw, validLessonIds]
   );
 
-  // Unlock rule: first lesson always unlocked; otherwise previous must be completed
-  const isUnlocked = (index) => {
-    if (index === 0) return true;
-    const prevId = validLessonIds[index - 1];
-    return completedLessons.includes(prevId);
-  };
+  // Unlock rule: first unlocked, rest depend on previous completion
+  const isUnlocked = (index) => (index === 0 ? true : completedLessons.includes(validLessonIds[index - 1]));
 
-  // Title + hero
-  const title =
-    COURSE_TITLES[courseId] ??
-    (courseId?.[0]?.toUpperCase() + courseId?.slice(1));
+  const title = COURSE_TITLES[courseId] ?? (courseId?.[0]?.toUpperCase() + courseId?.slice(1));
   const heroBg = HERO_BG[courseId] ?? HERO_BG.crypto;
   const heroPos = HERO_BG_POS[courseId] ?? "center center";
 
+  // 🔁 refresh this course’s progress on mount + focus/visibility
+  const refreshThisCourse = async () => {
+    try {
+      const res = await fetch(`/api/user/progress?courseId=${courseId}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setUser((prev) => ({
+        ...prev,
+        xp: data.xp ?? prev.xp,
+        level: data.level ?? prev.level,
+        progress: {
+          ...(prev.progress || {}),
+          [courseId]: {
+            ...(prev.progress?.[courseId] || { lessonsCompleted: [] }),
+            lessonsCompleted: data.lessonsCompleted || [],
+          },
+        },
+      }));
+    } catch {}
+  };
+
+  useEffect(() => {
+    const run = () => refreshThisCourse();
+    run(); // on mount
+    const onFocus = () => run();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [courseId]);
+
   return (
     <div className="min-h-screen bg-[#1A1B2D] text-white">
-      <Header userProgress={user.progress} />
+      <Header />
 
       {/* Hero Section */}
       <div
@@ -72,8 +86,7 @@ export default function CourseOverview({ user, courseId }) {
         </h1>
 
         <p className={`text-base text-white mt-4 max-w-2xl ${comfortaa.className}`}>
-          Dive deep into financial education with interactive lessons, XP progress,
-          badges, and quizzes!
+          Dive deep into financial education with interactive lessons, XP progress, badges, and quizzes!
         </p>
       </div>
 
@@ -88,9 +101,7 @@ export default function CourseOverview({ user, courseId }) {
               <div
                 key={lessonId}
                 className={`border border-gray-700 rounded-lg px-4 py-4 ${
-                  unlocked
-                    ? "bg-[#24253b] hover:scale-[1.01] transition"
-                    : "bg-gray-800 opacity-50"
+                  unlocked ? "bg-[#24253b] hover:scale-[1.01] transition" : "bg-gray-800 opacity-50"
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -162,23 +173,10 @@ export async function getServerSideProps(context) {
   if (!session) {
     return { redirect: { destination: "/sign_in", permanent: false } };
   }
-
   const { courseId } = context.params;
-
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: {
-      name: true,
-      xp: true,
-      level: true,
-      progress: true,
-    },
+    select: { name: true, xp: true, level: true, progress: true },
   });
-
-  return {
-    props: {
-      user,
-      courseId,
-    },
-  };
+  return { props: { user, courseId } };
 }

@@ -1,5 +1,5 @@
 // src/pages/dashboard/index.jsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
 import { motion } from "framer-motion";
@@ -55,28 +55,41 @@ async function resolveIntroSrc(courseId) {
   return null;
 }
 
-export default function Dashboard({ user }) {
+export default function Dashboard({ user: ssrUser }) {
   const router = useRouter();
 
-  const courses = Object.keys(COURSE_META)
-    .filter((id) => lessonContent[id])
-    .map((id) => {
-      const meta = COURSE_META[id];
-      const totalLessons = Object.keys(lessonContent[id]).length || 0;
-      const completedLessons =
-        user?.progress?.[id]?.lessonsCompleted?.length || 0;
-      const progress = totalLessons
-        ? Math.min(100, Math.round((completedLessons / totalLessons) * 100))
-        : 0;
-      return { id, ...meta, totalLessons, completedLessons, progress };
-    });
+  // 🔄 Local user state so we can refresh progress without changing the UI
+  const [user, setUser] = useState(ssrUser);
 
-  const [intro, setIntro] = useState({
-    open: false,
-    id: null,
-    src: "",
-    error: false,
-  });
+  // Build course cards from CURRENT user state (so they update after refresh)
+  const courses = useMemo(() => {
+    return Object.keys(COURSE_META)
+      .filter((id) => lessonContent[id])
+      .map((id) => {
+        const meta = COURSE_META[id];
+        const totalLessons = Object.keys(lessonContent[id]).length || 0;
+
+        // Cleaned, de-duped, and course-bounded completion list
+        const raw = user?.progress?.[id]?.lessonsCompleted || [];
+        const validIds = Object.keys(lessonContent[id]);
+        const completed = [...new Set(raw)].filter((x) => validIds.includes(x));
+
+        const progress = totalLessons
+          ? Math.min(100, Math.round((completed.length / totalLessons) * 100))
+          : 0;
+
+        return {
+          id,
+          ...meta,
+          totalLessons,
+          completedLessons: completed.length,
+          progress,
+        };
+      });
+  }, [user]);
+
+  // ===== Intro overlay state (unchanged) =====
+  const [intro, setIntro] = useState({ open: false, id: null, src: "", error: false });
   const videoRef = useRef(null);
   const [isMuted, setIsMuted] = useState(true);
 
@@ -84,13 +97,10 @@ export default function Dashboard({ user }) {
     if (!intro.open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
+    return () => { document.body.style.overflow = prevOverflow; };
   }, [intro.open]);
 
   const routerPushCourse = (id) => router.push(`/dashboard/${id}`);
-
   const enterCourse = (id) => routerPushCourse(id);
 
   const handleCourseClick = async (id) => {
@@ -114,10 +124,46 @@ export default function Dashboard({ user }) {
     if (!v) return;
     v.muted = !v.muted;
     setIsMuted(v.muted);
+    try { await v.play(); } catch {}
+  };
+
+  // 🔁 PROGRESS REFRESH: on mount + on focus/visibility
+  const refreshCourse = async (courseId) => {
     try {
-      await v.play();
+      const res = await fetch(`/api/user/progress?courseId=${courseId}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setUser((prev) => ({
+        ...prev,
+        xp: data.xp ?? prev.xp,
+        level: data.level ?? prev.level,
+        progress: {
+          ...(prev.progress || {}),
+          [courseId]: {
+            ...(prev.progress?.[courseId] || { lessonsCompleted: [] }),
+            lessonsCompleted: data.lessonsCompleted || [],
+          },
+        },
+      }));
     } catch {}
   };
+
+  useEffect(() => {
+    const courseIds = Object.keys(COURSE_META).filter((id) => lessonContent[id]);
+
+    const refreshAll = () => courseIds.forEach((id) => refreshCourse(id));
+    // run once on client mount
+    refreshAll();
+
+    // run whenever tab gains focus or becomes visible again
+    const onFocus = () => refreshAll();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-[#0a0a15] text-white">
@@ -163,9 +209,7 @@ export default function Dashboard({ user }) {
                   </span>
                 </div>
 
-                <p
-                  className={`${comfortaa.className} text-sm md:text-base text-gray-300 mt-2`}
-                >
+                <p className={`${comfortaa.className} text-sm md:text-base text-gray-300 mt-2`}>
                   {course.description}
                 </p>
 
@@ -180,35 +224,22 @@ export default function Dashboard({ user }) {
                   />
                 </div>
 
-                <p
-                  className={`${comfortaa.className} text-pink-400 text-xs mt-2`}
-                >
-                  🕹 {course.completedLessons}/{course.totalLessons} Lessons
-                  Completed
+                <p className={`${comfortaa.className} text-pink-400 text-xs mt-2`}>
+                  🕹 {course.completedLessons}/{course.totalLessons} Lessons Completed
                 </p>
               </motion.article>
             ))}
           </div>
         </div>
 
-        {/* ===================== INTRO OVERLAY (updated) ===================== */}
+        {/* Intro overlay (unchanged) */}
         {intro.open && (
-          <div
-            className="
-              fixed inset-0 z-[9999]
-              bg-black
-              grid
-              grid-rows-[1fr_auto]
-              [--safe-bottom:env(safe-area-inset-bottom)]
-            "
-          >
-            {/* Row 1: Video centered and as large as possible */}
+          <div className="fixed inset-0 z-[9999] bg-black grid grid-rows-[1fr_auto] [--safe-bottom:env(safe-area-inset-bottom)]">
             <div className="flex items-center justify-center px-3">
-              {/* This box leaves ~84px for the buttons row, so video won't overlap them */}
               <div className="relative w-screen h-[calc(100vh-84px-var(--safe-bottom))]">
                 <video
                   key={intro.src}
-                    ref={videoRef}
+                  ref={videoRef}
                   className="absolute inset-0 w-full h-full object-contain bg-black"
                   src={intro.src}
                   muted={isMuted}
@@ -246,7 +277,6 @@ export default function Dashboard({ user }) {
               </div>
             </div>
 
-            {/* Row 2: Buttons (always visible, centered, below the video) */}
             <div className="pb-[max(12px,var(--safe-bottom))] pt-3 flex items-center justify-center gap-3">
               <button
                 onClick={handleToggleMute}
@@ -268,7 +298,7 @@ export default function Dashboard({ user }) {
       </div>
     </div>
   );
-} // ✅ CLOSE the component here
+}
 
 // ---------- SSR ----------
 export async function getServerSideProps(context) {
@@ -276,11 +306,9 @@ export async function getServerSideProps(context) {
   if (!session) {
     return { redirect: { destination: "/sign_in", permanent: false } };
   }
-
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
     select: { name: true, xp: true, level: true, progress: true },
   });
-
   return { props: { user } };
 }

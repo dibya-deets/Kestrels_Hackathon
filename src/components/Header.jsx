@@ -92,16 +92,13 @@ export default function Header() {
     <header className="bg-[#0D0E1D] text-white px-4 sm:px-6 py-4 flex items-center justify-between relative">
       {/* Left: Back on lesson page AND course page (updated logic) */}
       <div className="flex items-center min-w-[80px]">
-        {(isLessonPage || isCoursePage) && (
+        {(isLessonPage ) && (
           <button
             onClick={() => {
               if (isLessonPage) {
                 // From a lesson, go to its course overview
                 router.push(`/dashboard/${router.query.courseId}`);
-              } else if (isCoursePage) {
-                // From a course overview, ALWAYS go to dashboard (no history back)
-                router.push("/dashboard");
-              }
+              } 
             }}
             className={cta}
             aria-label="Back"

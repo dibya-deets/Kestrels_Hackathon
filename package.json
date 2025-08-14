@@ -2,13 +2,20 @@
   "name": "investerra",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "seed": "node src/data/seedFAQs.js",
-    "seed:faqs": "node src/data/seedFAQs.js"
+    "seed:faqs": "node src/data/seedFAQs.js",
+
+    "postinstall": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "vercel-build": "npm run prisma:deploy && next build"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
