@@ -25,6 +25,7 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
   const [videoOpen, setVideoOpen] = useState(true);
   const hasMarkedComplete = useRef(false);
 
+  // Load lesson
   useEffect(() => {
     const courseLessons = lessonContent[courseId];
     if (!courseLessons) return;
@@ -32,30 +33,38 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     if (currentLesson) setLesson({ ...currentLesson, id: lessonId });
   }, [courseId, lessonId]);
 
+  // Restore opened sub-lessons (local)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(READ_KEY(courseId, lessonId));
       if (!raw) return;
       const saved = JSON.parse(raw);
       const savedStr = Array.isArray(saved) ? saved.map(toId) : [];
-      const currentIds = (lessonContent[courseId]?.[lessonId]?.subLessons || []).map(s => toId(s.id));
+      const currentIds =
+        (lessonContent[courseId]?.[lessonId]?.subLessons || []).map((s) =>
+          toId(s.id)
+        );
       const currentSet = new Set(currentIds);
-      const filtered = savedStr.filter(id => currentSet.has(id));
+      const filtered = savedStr.filter((id) => currentSet.has(id));
       setMarkedOpened(filtered);
     } catch {}
   }, [courseId, lessonId]);
 
   useEffect(() => {
     try {
-      localStorage.setItem(READ_KEY(courseId, lessonId), JSON.stringify(markedOpened));
+      localStorage.setItem(
+        READ_KEY(courseId, lessonId),
+        JSON.stringify(markedOpened)
+      );
     } catch {}
   }, [markedOpened, courseId, lessonId]);
 
+  // Open first unread (or last opened)
   useEffect(() => {
     if (!lesson) return;
     const subs = lesson.subLessons || [];
     if (!subs.length) return;
-    const subIds = subs.map(s => toId(s.id));
+    const subIds = subs.map((s) => toId(s.id));
     const markedSetLocal = new Set(markedOpened.map(toId));
     let targetId = subIds.find((id) => !markedSetLocal.has(id));
     if (!targetId) {
@@ -73,6 +82,7 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     setOpenedSubLessons([targetId]);
   }, [lesson, markedOpened, courseId, lessonId]);
 
+  // Progress refresh
   const refreshProgress = async () => {
     try {
       const res = await fetch(`/api/user/progress?courseId=${courseId}`);
@@ -97,6 +107,7 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     }
   };
 
+  // Watch for quiz completion flags
   const quizFlagKeys = [
     `quizPassed:${courseId}:${lessonId}`,
     `quiz:${courseId}:${lessonId}:passed`,
@@ -118,7 +129,10 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
   };
   useEffect(() => {
     checkQuizPassedFlag();
-    const onFocus = () => { checkQuizPassedFlag(); refreshProgress(); };
+    const onFocus = () => {
+      checkQuizPassedFlag();
+      refreshProgress();
+    };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
     return () => {
@@ -156,27 +170,49 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
     );
   };
 
+  // Derived course/lesson state
   const courseLessons = useMemo(() => lessonContent[courseId] || {}, [courseId]);
-  const validLessonIds = useMemo(() => Object.keys(courseLessons), [courseLessons]);
+  const validLessonIds = useMemo(
+    () => Object.keys(courseLessons),
+    [courseLessons]
+  );
   const completedRaw = user.progress?.[courseId]?.lessonsCompleted || [];
   const completedLessonsClean = useMemo(
-    () => [...new Set(completedRaw)].filter((id) => validLessonIds.includes(id)),
+    () => [...new Set(completedRaw)].filter((id) =>
+      validLessonIds.includes(id)
+    ),
     [JSON.stringify(completedRaw), validLessonIds.join("|")]
   );
   const totalLessons = validLessonIds.length;
-  const markedSet = useMemo(() => new Set(markedOpened.map(toId)), [markedOpened]);
+
+  const markedSet = useMemo(
+    () => new Set(markedOpened.map(toId)),
+    [markedOpened]
+  );
   if (!lesson) return <p className="text-white p-6">Loading lesson...</p>;
 
-  const allSubLessonsOpened = lesson.subLessons.every((s) => markedSet.has(toId(s.id)));
+  const allSubLessonsOpened = lesson.subLessons.every((s) =>
+    markedSet.has(toId(s.id))
+  );
+
   const levelLabel = user.level || "Seedling";
   const xp = user.xp || 0;
   const xpPct = Math.min(((xp % 100) / 100) * 100, 100);
-  const heroBg = courseId === "crypto" ? "/assets/crypto1.gif" : "/assets/investing1.gif";
+  const heroBg =
+    courseId === "crypto" ? "/assets/crypto1.gif" : "/assets/investing1.gif";
 
   const startGamifiedQuiz = () => {
-    try { localStorage.setItem("lastQuizLesson", JSON.stringify({ courseId, lessonId })); } catch {}
+    try {
+      localStorage.setItem(
+        "lastQuizLesson",
+        JSON.stringify({ courseId, lessonId })
+      );
+    } catch {}
     router.push(`/dashboard/${courseId}/quiz?lessonId=${lessonId}`);
   };
+
+  // ✅ number of unlocked badges = completed lessons in this course (max 3)
+  const unlockedCount = Math.min(3, completedLessonsClean.length);
 
   return (
     <div className="min-h-screen bg-[#0D0E1D] text-white">
@@ -218,7 +254,13 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
                     className="px-4 py-3"
                   >
                     <div className="rounded-lg overflow-hidden bg-black">
-                      <video src={lesson.video.src} poster={lesson.video.poster} controls preload="metadata" className="w-full h-auto" />
+                      <video
+                        src={lesson.video.src}
+                        poster={lesson.video.poster}
+                        controls
+                        preload="metadata"
+                        className="w-full h-auto"
+                      />
                     </div>
                     <p className={`mt-2 text-xs text-gray-300 ${comfortaa.className}`}>
                       Tip: Use the controls to play/pause or scrub through the video.
@@ -241,7 +283,9 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
                     isOpen ? "bg-[#24253b]" : "bg-[#1A1B2D]"
                   }`}
                 >
-                  <span>{idx + 1}. {sub.title}</span>
+                  <span>
+                    {idx + 1}. {sub.title}
+                  </span>
                   {isOpen ? <FaChevronDown /> : <FaChevronRight />}
                 </button>
                 <AnimatePresence>
@@ -259,10 +303,13 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
                         transition={{ duration: 0.3 }}
                         dangerouslySetInnerHTML={{
                           __html: sub.content
-                            .replace(/^([A-Z][^\n]+):/gm, '<strong class="block text-yellow-300">$1:</strong>')
+                            .replace(
+                              /^([A-Z][^\n]+):/gm,
+                              '<strong class="block text-yellow-300">$1:</strong>'
+                            )
                             .replace(/• (.+)/g, '<li class="ml-4 list-disc">$1</li>')
                             .replace(/\n\d\) (.+)/g, '<li class="ml-4 list-decimal">$1</li>')
-                            .replace(/\n/g, '<br/>')
+                            .replace(/\n/g, "<br/>"),
                         }}
                       />
                     </motion.div>
@@ -274,12 +321,21 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
 
           {/* Gamified Quiz CTA */}
           <div className="mt-6 border border-gray-700 rounded-md overflow-hidden">
-            <div className={`w-full flex items-center justify-between px-4 py-3 text-left font-['Press_Start_2P'] text-sm ${allSubLessonsOpened ? "bg-[#24253b]" : "bg-gray-800 opacity-60"}`}>
+            <div
+              className={`w-full flex items-center justify-between px-4 py-3 text-left font-['Press_Start_2P'] text-sm ${
+                allSubLessonsOpened ? "bg-[#24253b]" : "bg-gray-800 opacity-60"
+              }`}
+            >
               <span>Lesson Quiz</span>
               <button
                 onClick={startGamifiedQuiz}
                 disabled={!allSubLessonsOpened}
-                className={["rounded-md px-4 py-2 font-semibold", allSubLessonsOpened ? "bg-indigo-500 hover:bg-indigo-600" : "cursor-not-allowed bg-gray-700"].join(" ")}
+                className={[
+                  "rounded-md px-4 py-2 font-semibold",
+                  allSubLessonsOpened
+                    ? "bg-indigo-500 hover:bg-indigo-600"
+                    : "cursor-not-allowed bg-gray-700",
+                ].join(" ")}
               >
                 Start Gamified Quiz
               </button>
@@ -326,6 +382,70 @@ export default function LessonPage({ user: initialUser, courseId, lessonId }) {
                 );
               })}
             </ul>
+          </div>
+
+          {/* ✅ Course Badges — centered PNGs in circles */}
+          <div className={`${comfortaa.className} border-t border-gray-600 pt-4`}>
+            <h3 className="font-bold mb-3">Course Badges</h3>
+
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { id: "b1", img: "/assets/images/badges/badge1.png", label: "First Steps" },
+                { id: "b2", img: "/assets/images/badges/badge2.png", label: "Halfway Hero" },
+                { id: "b3", img: "/assets/images/badges/badge3.png", label: "Course Conqueror" },
+              ].map((b, i) => {
+                const unlocked = unlockedCount >= i + 1;
+                return (
+                  <div key={b.id} className="flex flex-col items-center text-center">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.92 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.28, delay: i * 0.05 }}
+                      className={[
+                        "relative rounded-full overflow-hidden select-none bg-black",
+                        "flex items-center justify-center",
+                        "w-16 h-16 md:w-10 md:h-10",
+                        unlocked
+                          ? "ring-2 ring-yellow-300/70 shadow"
+                          : "ring-2 ring-gray-600/60",
+                      ].join(" ")}
+                      aria-label={`${b.label} ${unlocked ? "(unlocked)" : "(locked)"}`}
+                      title={b.label}
+                    >
+                      {/* PNG fills most of the circle, centered */}
+                      <img
+                        src={b.img}
+                        alt={b.label}
+                        className="block object-contain object-center w-[90%] h-[90%] md:w-[94%] md:h-[94%]"
+                      />
+                      {!unlocked && (
+                        <div className="pointer-events-none absolute inset-0 bg-black/25 flex items-center justify-center">
+                          <svg width="18" height="18" viewBox="0 0 24 24" className="opacity-85">
+                            <path
+                              fill="#e5e7eb"
+                              d="M17 8V7a5 5 0 1 0-10 0v1H5v13h14V8h-2Zm-8 0V7a3 3 0 1 1 6 0v1H9Zm3 9a2 2 0 1 1 0-4a2 2 0 0 1 0 4Z"
+                            />
+                          </svg>
+                        </div>
+                      )}
+                    </motion.div>
+
+                    <span className="mt-2 text-[11px] md:text-xs text-gray-200">
+                      {b.label}
+                    </span>
+                    <span
+                      className={`text-[10px] ${unlocked ? "text-emerald-400" : "text-gray-400"}`}
+                    >
+                      {unlocked ? "Unlocked" : "Locked"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="mt-3 text-[11px] text-gray-400">
+              Unlock a badge each time you complete a lesson quiz.
+            </p>
           </div>
         </div>
       </div>
